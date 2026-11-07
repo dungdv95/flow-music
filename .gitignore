@@ -10,3 +10,4 @@ output/
 # Recorded recipes are tied to your account/UI version; examples are tracked.
 recipes/*.json
 !recipes/examples/
+settings.json

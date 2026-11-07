@@ -17,6 +17,7 @@ from typing import Optional
 from agent import config
 from agent.db import crud
 from agent.services import recipes as rc
+from agent.services.flowmusic_api import FlowMusicError, get_flowmusic_api
 from agent.services.music import MusicError, download, run_recipe
 from agent.services.post_process import FFmpegError, probe_duration
 from agent.utils.paths import songs_dir, videos_dir
@@ -26,6 +27,12 @@ logger = logging.getLogger(__name__)
 MAX_ACTIVE = 4
 MAX_TAKES = 4
 SONG_TYPES = {"GENERATE_SONG", "EXTEND_SONG", "COVER_SONG", "RUN_RECIPE"}
+# Requests whose recipe is "native:<tool>" call Flow Music's API directly
+# (agent/services/flowmusic_api.py) instead of a recorded recipe.
+NATIVE_PREFIX = "native:"
+MV_TIMEOUT_S = 3600
+BROWSER_GONE = ("EXTENSION_NOT_CONNECTED", "EXTENSION_DISCONNECTED", "BRIDGE_TIMEOUT",
+                "NO_FLOW_MUSIC_TAB", "TAB_DISCARDED", "NO_INJECTION_RESULT")
 # Failures worth another try: the browser side was briefly unavailable.
 TRANSIENT = ("BRIDGE_TIMEOUT", "EXTENSION_NOT_CONNECTED", "EXTENSION_DISCONNECTED",
              "NO_FLOW_MUSIC_TAB", "TAB_DISCARDED", "CAPTCHA", "NO_INJECTION_RESULT",
@@ -56,9 +63,19 @@ class Worker:
         self._stop.set()
 
     async def run(self) -> None:
+        self._stop = asyncio.Event()
+        self._active.clear()
         # Anything left PROCESSING by a crash goes back to the queue.
         for req in await crud.list_rows("request", {"status": "PROCESSING"}):
-            await crud.update("request", req["id"], {"status": "PENDING"})
+            if not req["recipe"].startswith(NATIVE_PREFIX):
+                await crud.update("request", req["id"], {"status": "PENDING"})
+            elif req.get("result"):
+                await crud.update("request", req["id"], {"status": "POLLING"})
+            else:
+                # It may or may not have reached Flow Music; resubmitting could
+                # charge twice, so a human decides.
+                await self._fail(req, "INTERRUPTED during submit — check the Flow Music library, "
+                                      "then POST /api/requests/<id>/retry if nothing was created", retry=False)
         logger.info("Worker started")
         while not self._stop.is_set():
             try:
@@ -101,8 +118,11 @@ class Worker:
         rid = req["id"]
         await crud.update("request", rid, {"status": "PROCESSING", "submitted_at": _now(),
                                            "error_message": None})
-        if req.get("song_id"):
+        if req.get("song_id") and req["type"] != "GENERATE_MUSIC_VIDEO":
             await crud.update("song", req["song_id"], {"status": "PROCESSING", "error_message": None})
+        if req["recipe"].startswith(NATIVE_PREFIX):
+            await self._native(req, resume=False)
+            return
         try:
             recipe = rc.load_recipe(req["recipe"])
             out = await run_recipe(req["recipe"], req.get("variables") or {}, recipe)
@@ -117,6 +137,13 @@ class Worker:
 
     async def _poll(self, req: dict) -> None:
         rid = req["id"]
+        if req["recipe"].startswith(NATIVE_PREFIX):
+            # Reached after a restart or a browser outage mid-job: pick it back up.
+            if time.time() - self._last_poll.get(rid, 0) < config.POLL_INTERVAL_S:
+                return
+            self._last_poll[rid] = time.time()
+            await self._native(req, resume=True)
+            return
         self._last_poll[rid] = time.time()
         if time.time() - _parse_ts(req.get("submitted_at")) > config.POLL_TIMEOUT_S:
             await self._fail(req, f"POLL_TIMEOUT after {int(config.POLL_TIMEOUT_S)}s", retry=False)
@@ -141,6 +168,93 @@ class Worker:
         except Exception as e:
             logger.exception("Poll %s crashed", rid)
             await self._fail(req, f"INTERNAL: {e}", retry=False)
+
+    # ── native Flow Music API ───────────────────────────────
+    async def _native(self, req: dict, resume: bool) -> None:
+        """Submit (or resume) a native job. Never auto-retried: a second
+        submit would be charged again."""
+        tool = req["recipe"][len(NATIVE_PREFIX):]
+        try:
+            if tool == "audio__create_song":
+                await self._native_song(req, resume)
+            elif tool == "video__create_music_video":
+                await self._native_video(req, resume)
+            else:
+                await self._fail(req, f"NATIVE: unsupported tool {tool}", retry=False)
+        except (FlowMusicError, MusicError, FFmpegError) as e:
+            msg = str(e)
+            if any(t in msg for t in BROWSER_GONE):
+                # The browser side is briefly unavailable. Once a job is
+                # submitted keep watching it; before that nothing was sent, so
+                # it is safe to queue again. Never resubmit a submitted job.
+                fresh = await crud.get("request", req["id"]) or req
+                submitted = fresh.get("status") == "POLLING" or bool((fresh.get("result") or {}))
+                await crud.update("request", req["id"], {
+                    "status": "POLLING" if submitted else "PENDING", "error_message": msg})
+                self._last_poll[req["id"]] = time.time()
+                logger.warning("Native %s waiting for the browser: %s", req["id"][:8], msg)
+                return
+            await self._fail(req, msg, retry=False)
+        except Exception as e:
+            logger.exception("Native %s crashed", req["id"])
+            await self._fail(req, f"INTERNAL: {e}", retry=False)
+
+    async def _native_song(self, req: dict, resume: bool) -> None:
+        api = get_flowmusic_api()
+        v = req.get("variables") or {}
+        result = req.get("result") or {}
+        clip_ids = result.get("clip_ids") if resume else None
+        if not clip_ids:
+            if resume:
+                raise FlowMusicError("RESUME_IMPOSSIBLE: no clip ids saved — check the Flow Music library before retrying")
+            res = await api.create_song(
+                project_id=v.get("flow_project_id"), title=v.get("title") or "Untitled",
+                sound_prompt=v.get("prompt") or "", lyrics=v.get("lyrics") or "",
+                instrumental=bool(v.get("instrumental")), bpm=v.get("bpm"),
+                length_s=v.get("duration_s"), seed=v.get("seed"))
+            clip_ids = res["clip_ids"]
+            result = {"clip_ids": clip_ids, "conversation_id": res.get("conversation_id")}
+            await crud.update("request", req["id"], {"status": "POLLING", "job_id": res["job_id"],
+                                                     "result": result})
+            if req.get("song_id"):
+                await crud.update("song", req["song_id"], {"remote_id": clip_ids[0]})
+            req = {**req, "job_id": res["job_id"]}
+        clips = await api.wait_for_clips(clip_ids, timeout_s=config.POLL_TIMEOUT_S)
+        ordered = [clips[c] for c in clip_ids if c in clips]
+        ex = {
+            "audio_urls": [c["audio_url"] for c in ordered],
+            "image_urls": [c["image_url"] for c in ordered if c.get("image_url")][:1],
+            "remote_id": clip_ids[0],
+            "take_meta": [{"clip_id": c["id"], "wav_url": c.get("wav_url"),
+                           "remote_duration_s": _float((c.get("duration") or {}).get("value"))}
+                          for c in ordered],
+            **result,
+        }
+        await self._finish_song(req, ex)
+
+    async def _native_video(self, req: dict, resume: bool) -> None:
+        api = get_flowmusic_api()
+        v = req.get("variables") or {}
+        result = req.get("result") or {}
+        mv_job = result.get("mv_job_id")
+        if not mv_job:
+            if resume:
+                raise FlowMusicError("RESUME_IMPOSSIBLE: render job id not saved — check Library → Music videos before retrying")
+            res = await api.create_music_video(
+                clip_id=v["clip_id"], user_message=v.get("user_message") or "",
+                aspect_ratio=v.get("aspect_ratio") or "16:9", resolution=v.get("resolution") or "720p",
+                start_s=v.get("start_s") or 0, duration_s=v.get("duration_s"),
+                render_lyrics=bool(v.get("render_lyrics")), project_id=v.get("flow_project_id"),
+                conversation_id=v.get("conversation_id"))
+            mv_job = res["job_id"]
+            result = {"mv_job_id": mv_job, "conversation_id": res.get("conversation_id"),
+                      "proposal": res.get("proposal")}
+            await crud.update("request", req["id"], {"status": "POLLING", "job_id": mv_job, "result": result})
+        state = await api.wait_for_music_video(mv_job, timeout_s=MV_TIMEOUT_S)
+        result = {**result, "video_url": state["final_video_url"],
+                  "token_estimate": state.get("token_estimate"),
+                  "total_runtime_s": state.get("total_runtime_s")}
+        await self._finish_native_video({**req, "result": result}, {"video_urls": [state["final_video_url"]], **result})
 
     async def _after_response(self, req: dict, recipe: rc.Recipe, ex: dict, from_poll: bool) -> None:
         rid, kind = req["id"], req["type"]
@@ -200,9 +314,10 @@ class Worker:
         project = await crud.get("project", song["project_id"])
         folder = songs_dir(project["slug"])
         takes = []
+        meta = ex.get("take_meta") or []
         for i, url in enumerate(ex["audio_urls"][:MAX_TAKES]):
             path = await download(url, folder / f"{song['slug']}_{i + 1}")
-            take = {"url": url, "path": str(path)}
+            take = {"url": url, "path": str(path), **(meta[i] if i < len(meta) else {})}
             try:
                 take["duration_s"] = round(await probe_duration(path), 2)
             except FFmpegError:
@@ -227,6 +342,7 @@ class Worker:
             except MusicError as e:
                 logger.info("Cover download skipped: %s", e)
         await crud.update("song", song["id"], updates)
+        result.pop("take_meta", None)
         await self._complete(req, {**result, "takes": takes})
 
     async def _finish_native_video(self, req: dict, ex: dict) -> None:
@@ -261,6 +377,13 @@ class Worker:
         if mv_id:
             await crud.update("music_video", mv_id, {"status": "FAILED", "error_message": message})
         logger.warning("Request %s failed: %s", req["id"][:8], message)
+
+
+def _float(value) -> Optional[float]:
+    try:
+        return round(float(value), 2)
+    except (TypeError, ValueError):
+        return None
 
 
 def _slim(ex: dict) -> dict:

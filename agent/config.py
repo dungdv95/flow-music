@@ -1,4 +1,5 @@
 """Configuration constants. Every value can be overridden with an env var."""
+import json
 import os
 from pathlib import Path
 
@@ -26,7 +27,30 @@ WS_HOST = os.environ.get("WS_HOST", "127.0.0.1")
 WS_PORT = _int("WS_PORT", "9300", 1)
 
 # ─── Flow Music ──────────────────────────────────────────────
-FLOW_MUSIC_URL = os.environ.get("FLOW_MUSIC_URL", "https://flowmusic.google/")
+FLOW_MUSIC_URL = os.environ.get("FLOW_MUSIC_URL", "https://flowmusic.app/")
+
+# Local, per-machine settings changed through PUT /api/settings (gitignored).
+SETTINGS_PATH = Path(os.environ.get("FMK_SETTINGS_PATH", BASE_DIR / "settings.json"))
+
+
+def load_settings() -> dict:
+    try:
+        return json.loads(SETTINGS_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(values: dict) -> dict:
+    merged = {**load_settings(), **values}
+    SETTINGS_PATH.write_text(json.dumps(merged, indent=2) + "\n")
+    return merged
+
+
+def default_flow_project_id() -> str:
+    """Flow Music project used when a local project doesn't name its own.
+
+    Filled into recipes as {{flow_project_id}}."""
+    return os.environ.get("FLOW_MUSIC_PROJECT_ID") or load_settings().get("flow_music_project_id", "")
 
 # Timeout for one command sent to the extension (page fetch, captcha, rpc).
 BRIDGE_TIMEOUT_S = _float("BRIDGE_TIMEOUT_S", "120", 5)

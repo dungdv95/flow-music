@@ -1,4 +1,7 @@
-<!-- Wrapper — edit skills/fm-remix.md instead. -->
+---
+description: Extend, cover, or import songs
+---
+
 Read and follow the instructions in skills/fm-remix.md
 
 Arguments: $ARGUMENTS

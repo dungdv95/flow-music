@@ -37,15 +37,6 @@ def batch_text(rpcid, payload):
     return f")]}}'\n\n{len(chunk)}\n{chunk}\n"
 
 
-@pytest.fixture()
-def client(monkeypatch):
-    monkeypatch.setattr(config, "WORKER_TICK_S", 0.5)
-    monkeypatch.setattr(config, "POLL_INTERVAL_S", 1)
-    monkeypatch.setattr(config, "GENERATION_MIN_INTERVAL_S", 0)
-    with TestClient(app) as c:
-        yield c
-
-
 def wait_for(client, path, pred, timeout=20):
     import time
     end = time.time() + timeout
@@ -122,7 +113,7 @@ def test_full_song_flow(client, tmp_path, monkeypatch):
                                            "prompt": "sunrise synthwave", "instrumental": True}).json()
 
     get_bridge().attach(FakeWS(handler))
-    req = client.post(f"/api/songs/{song['id']}/generate").json()
+    req = client.post(f"/api/songs/{song['id']}/generate", json={"recipe": "generate_song"}).json()
     assert req["status"] == "PENDING"
     done = wait_for(client, f"/api/requests/{req['id']}", lambda d: d["status"] in ("COMPLETED", "FAILED"))
     assert done["status"] == "COMPLETED", done
@@ -144,3 +135,12 @@ def test_full_song_flow(client, tmp_path, monkeypatch):
     out = client.post(f"/api/music-videos/{mv['id']}/visualizer").json()
     assert out["status"] == "COMPLETED"
     assert out["output_path"].endswith("sunrise_visualizer.mp4")
+
+
+def test_settings_and_project_default(client):
+    pid = "a7a39602-5fb6-438e-9431-16d263ba48b7"
+    assert client.put("/api/settings", json={"flow_music_project_id": "nope"}).status_code == 400
+    assert client.put("/api/settings", json={"flow_music_project_id": pid}).json()["flow_music_project_id"] == pid
+    assert client.get("/api/status").json()["flow_music_project_id"] == pid
+    project = client.post("/api/projects", json={"name": "Defaults"}).json()
+    assert project["flow_music_project_id"] == pid

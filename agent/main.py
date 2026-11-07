@@ -4,13 +4,16 @@ import json
 import logging
 import shutil
 from contextlib import asynccontextmanager
+from typing import Optional
 
 import websockets
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from agent import config
 from agent.api.music_videos import router as music_videos_router
+from agent.api.flowmusic import router as flowmusic_router
 from agent.api.projects import router as projects_router
 from agent.api.recipes import captures_router, recipes_router, redact_body
 from agent.api.requests import router as requests_router
@@ -81,7 +84,7 @@ app.add_middleware(
 )
 
 for router in (projects_router, songs_router, requests_router, captures_router,
-               recipes_router, music_videos_router):
+               recipes_router, music_videos_router, flowmusic_router):
     app.include_router(router, prefix="/api")
 
 
@@ -121,6 +124,26 @@ async def ext_capture(request: Request, x_callback_secret: str = Header("")):
     return {"ok": True, "id": row["id"]}
 
 
+# ─── Settings ────────────────────────────────────────────────
+
+class SettingsIn(BaseModel):
+    flow_music_project_id: Optional[str] = None
+
+
+@app.get("/api/settings")
+async def get_settings():
+    return {**config.load_settings(), "flow_music_project_id": config.default_flow_project_id()}
+
+
+@app.put("/api/settings")
+async def put_settings(body: SettingsIn):
+    values = body.model_dump(exclude_unset=True)
+    pid = values.get("flow_music_project_id")
+    if pid and not rc.UUID_RE.fullmatch(pid):
+        raise HTTPException(400, "flow_music_project_id must be a UUID")
+    return config.save_settings(values)
+
+
 # ─── Health / status ─────────────────────────────────────────
 
 @app.get("/health")
@@ -148,6 +171,7 @@ async def status():
         "version": VERSION,
         **bridge.status(),
         "flow_music_tab": tab,
+        "flow_music_project_id": config.default_flow_project_id() or None,
         "ffmpeg": bool(shutil.which("ffmpeg") and shutil.which("ffprobe")),
         "recipes": {
             name: ("ok" if recipes.get(name, {}).get("valid") else

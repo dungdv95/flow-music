@@ -2,7 +2,7 @@
 
 The agent runs a WebSocket server; the extension connects as a client. The
 agent sends commands over the socket ({id, method, params}); the extension runs
-them inside a signed-in flowmusic.google tab and posts the answer back to
+them inside a signed-in flowmusic.app tab and posts the answer back to
 ``POST /api/ext/callback`` (HTTP survives a socket blip mid-generation).
 
 Commands:

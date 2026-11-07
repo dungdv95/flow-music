@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS project (
     description   TEXT,
     artist_style  TEXT,                 -- default style prompt for every song
     language      TEXT NOT NULL DEFAULT 'en',
+    flow_music_project_id TEXT,         -- project on flowmusic.app ({{flow_project_id}})
     flowkit_project_id TEXT,            -- linked Flow Kit project (music videos)
     status        TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE','ARCHIVED')),
     created_at    TEXT NOT NULL DEFAULT {_NOW},
@@ -116,6 +117,11 @@ CREATE TABLE IF NOT EXISTS capture (
 );
 """
 
+# Columns added after the first release: (table, column, declaration).
+MIGRATIONS = [
+    ("project", "flow_music_project_id", "TEXT"),
+]
+
 
 async def get_db() -> aiosqlite.Connection:
     global _db
@@ -132,6 +138,11 @@ async def get_db() -> aiosqlite.Connection:
 async def init_db() -> None:
     db = await get_db()
     await db.executescript(SCHEMA)
+    for table, column, decl in MIGRATIONS:
+        async with db.execute(f"PRAGMA table_info({table})") as cur:
+            existing = {row[1] for row in await cur.fetchall()}
+        if column not in existing:
+            await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
     await db.commit()
     logger.info("Database ready at %s", config.DB_PATH)
 

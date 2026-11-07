@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from agent import config
 from agent.api.songs import queue
 from agent.db import crud
+from agent.services.flowmusic_api import music_video_credits
 from agent.services.post_process import FFmpegError, concat, make_visualizer, mux, plan_scenes, probe_duration
 from agent.utils.paths import videos_dir
 
@@ -47,8 +48,15 @@ class AttachIn(BaseModel):
 
 
 class NativeIn(BaseModel):
-    prompt: str = ""
-    recipe: str = "generate_music_video"
+    prompt: str = ""                        # visual direction for Flow Music's video agent
+    resolution: str = "720p"
+    start_s: float = 0
+    duration_s: Optional[float] = None      # default: whole song
+    render_lyrics: bool = False
+    take: Optional[int] = None              # which take (clip) to use; default the selected one
+    confirm: bool = False                   # must be true: this spends credits
+    conversation_id: Optional[str] = None   # Flow Music conversation holding the proposal
+    recipe: Optional[str] = None            # a recorded recipe instead of the API
 
 
 async def _mv_or_404(mid: str) -> dict:
@@ -174,12 +182,33 @@ async def attach_visuals(mid: str, body: AttachIn):
 async def native_music_video(mid: str, body: NativeIn = NativeIn()):
     mv = await _mv_or_404(mid)
     song = await crud.get("song", mv["song_id"])
-    if not song.get("remote_id"):
-        raise HTTPException(409, "song has no remote_id in Flow Music")
+    takes = song.get("takes") or []
+    idx = body.take if body.take is not None else song.get("selected_take") or 0
+    clip_id = (takes[idx].get("clip_id") if 0 <= idx < len(takes) else None) or song.get("remote_id")
+    if not clip_id:
+        raise HTTPException(409, "song has no Flow Music clip id — generate it through Flow Music first")
+    song_len = (takes[idx].get("remote_duration_s") if 0 <= idx < len(takes) else None) \
+        or song.get("audio_duration_s") or 0
+    duration = body.duration_s or max(0.0, song_len - body.start_s)
+    credits = music_video_credits(duration)
+    if not body.confirm:
+        raise HTTPException(402, {
+            "message": "Flow Music music videos cost credits — resend with confirm=true",
+            "estimated_credits": credits, "duration_s": round(duration, 1), "clip_id": clip_id,
+        })
+    aspect = "9:16" if mv["orientation"] == "VERTICAL" else "16:9"
     await crud.update("music_video", mid, {"status": "PROCESSING", "error_message": None})
-    return await queue("GENERATE_MUSIC_VIDEO", body.recipe, song, {
-        "remote_id": song["remote_id"], "prompt": body.prompt or song.get("prompt") or "",
-        "music_video_id": mid, "orientation": mv["orientation"],
+    if body.recipe:
+        return await queue("GENERATE_MUSIC_VIDEO", body.recipe, song, {
+            "remote_id": clip_id, "prompt": body.prompt, "music_video_id": mid,
+            "orientation": mv["orientation"]})
+    return await queue("GENERATE_MUSIC_VIDEO", "native:video__create_music_video", song, {
+        "clip_id": clip_id, "user_message": body.prompt, "aspect_ratio": aspect,
+        "resolution": body.resolution, "start_s": body.start_s, "duration_s": round(duration, 2),
+        "render_lyrics": body.render_lyrics, "music_video_id": mid, "estimated_credits": credits,
+        "conversation_id": body.conversation_id,
+        "flow_project_id": (await crud.get("project", mv["project_id"])).get("flow_music_project_id")
+        or config.default_flow_project_id() or None,
     })
 
 

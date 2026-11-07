@@ -5,6 +5,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from agent import config
 from agent.db import crud
 from agent.services import recipes as rc
 from agent.services.bridge import BridgeError, get_bridge
@@ -100,6 +101,8 @@ class FromCaptureIn(BaseModel):
     poll: Optional[str] = None
     rpc_index: int = 0
     overwrite: bool = False
+    # Templated wherever it appears; defaults to the saved Flow Music project id.
+    flow_project_id: Optional[str] = None
 
 
 class RunIn(BaseModel):
@@ -154,6 +157,7 @@ async def recipe_from_capture(body: FromCaptureIn):
             capture, body.name, body.sample_values,
             description=body.description, captcha_action=body.captcha_action,
             extract_rules=body.extract, poll=body.poll, rpc_index=body.rpc_index,
+            auto_values={"flow_project_id": body.flow_project_id or config.default_flow_project_id()},
         )
         path = rc.save_recipe(recipe)
     except rc.RecipeError as e:

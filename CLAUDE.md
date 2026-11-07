@@ -10,7 +10,7 @@ curl -s http://127.0.0.1:8300/api/status
 # Need: extension_connected: true, a flow_music_tab, recipes.generate_song + poll_song = "ok"
 ```
 
-Plus **one signed-in `https://flowmusic.google/` tab left open** — only the page
+Plus **one signed-in `https://flowmusic.app/` tab left open** — only the page
 can sign Flow Music requests, so nothing runs headless.
 
 ## How to work
@@ -41,7 +41,7 @@ can sign Flow Music requests, so nothing runs headless.
 
 ## Layout
 
-- `extension/` — Chrome MV3 bridge: runs commands in the flowmusic.google tab,
+- `extension/` — Chrome MV3 bridge: runs commands in the flowmusic.app tab,
   mints reCAPTCHA through the page, capture mode (`page.js` hooks fetch/XHR only while on)
 - `agent/services/recipes.py` — templating, batchexecute envelope/decoding, extractors, capture→recipe
 - `agent/services/bridge.py` — WS command channel + generation rate guard

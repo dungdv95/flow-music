@@ -18,7 +18,7 @@ Classify by `error_message` text, not HTTP status.
 |---|---|---|
 | `connection refused` on :8300 | agent not running | `./run.sh` (or `venv/bin/python -m agent.main`) |
 | `EXTENSION_NOT_CONNECTED` / `extension_connected: false` | extension not loaded / Chrome closed / wrong port | load `extension/` unpacked in `chrome://extensions`, click Reconnect in the popup. Port must be 9300 |
-| `NO_FLOW_MUSIC_TAB`, `TAB_DISCARDED` | no usable flowmusic.google tab | open https://flowmusic.google, sign in, keep the tab open (pin it so Chrome doesn't discard it) |
+| `NO_FLOW_MUSIC_TAB`, `TAB_DISCARDED` | no usable flowmusic.app tab | open https://flowmusic.app, sign in, keep the tab open (pin it so Chrome doesn't discard it) |
 | `RECIPE: recipe 'x' not found` / HTTP 409 `not recorded yet` | operation never captured | `/fm-capture x` |
 | `RECIPE: missing required variable` | song row lacks a field the recipe needs | set it on the song (`PATCH /api/songs/<id>`) or give a default in the recipe's `variables` |
 | `rendered payload is not valid JSON` | a placeholder sits outside quotes without `|jsonval`, or vice versa | fix the placeholder filter in `recipes/<name>.json` |

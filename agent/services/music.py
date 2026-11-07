@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 import httpx
 
+from agent import config
 from agent.services import recipes as rc
 from agent.services.bridge import BridgeError, get_bridge
 
@@ -28,7 +29,8 @@ async def run_recipe(name: str, variables: Optional[dict] = None,
     Raises MusicError on transport failures, HTTP errors and Flow error codes.
     """
     recipe = recipe or rc.load_recipe(name)
-    command = recipe.build_command(variables or {})
+    variables = {"flow_project_id": config.default_flow_project_id() or None, **(variables or {})}
+    command = recipe.build_command(variables)
     try:
         reply = await get_bridge().run(command)
     except BridgeError as e:

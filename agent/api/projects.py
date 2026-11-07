@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from agent import config
 from agent.db import crud
 from agent.utils.paths import project_dir, slugify
 
@@ -15,6 +16,7 @@ class ProjectIn(BaseModel):
     description: Optional[str] = None
     artist_style: Optional[str] = None
     language: str = "en"
+    flow_music_project_id: Optional[str] = None   # defaults to the saved setting
     flowkit_project_id: Optional[str] = None
 
 
@@ -23,13 +25,16 @@ class ProjectPatch(BaseModel):
     description: Optional[str] = None
     artist_style: Optional[str] = None
     language: Optional[str] = None
+    flow_music_project_id: Optional[str] = None
     flowkit_project_id: Optional[str] = None
     status: Optional[str] = None
 
 
 @router.post("")
 async def create_project(body: ProjectIn):
-    row = await crud.insert("project", {**body.model_dump(), "slug": slugify(body.name)})
+    values = body.model_dump()
+    values["flow_music_project_id"] = values["flow_music_project_id"] or config.default_flow_project_id() or None
+    row = await crud.insert("project", {**values, "slug": slugify(body.name)})
     project_dir(row["slug"])
     return row
 

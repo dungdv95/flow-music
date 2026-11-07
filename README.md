@@ -1,6 +1,6 @@
 # Flow Music Kit
 
-Hệ thống tự động tạo bài hát bằng **Google Flow Music** (`flowmusic.google`,
+Hệ thống tự động tạo bài hát bằng **Google Flow Music** (`flowmusic.app`,
 model Lyria 3.5) và dựng **music video** cho chúng. Đây là dự án anh em của
 [Flow Kit](../flowkit): cùng kiến trúc (Chrome extension làm cầu nối + agent
 Python + SQLite + skills cho Claude Code), và dùng Flow Kit để tạo phần hình cho
@@ -9,7 +9,7 @@ music video.
 ```
 Claude Code (/fm-*) ──HTTP──▶ Agent FastAPI :8300 ──WS :9300──▶ Chrome extension
                                   │  SQLite, worker,                 │ chạy request trong
-                                  │  ffmpeg, recipes                 ▼ tab flowmusic.google
+                                  │  ffmpeg, recipes                 ▼ tab flowmusic.app
                                   └──HTTP──▶ Flow Kit :8100 (hình ảnh/video cho MV)
 ```
 
@@ -41,7 +41,7 @@ dùng Flow Music.
 ```
 
 Chrome → `chrome://extensions` → bật Developer mode → **Load unpacked** → chọn
-thư mục `extension/`. Mở https://flowmusic.google, đăng nhập, và để tab mở
+thư mục `extension/`. Mở https://flowmusic.app, đăng nhập, và để tab mở
 (nên pin tab để Chrome không discard).
 
 Kiểm tra: `curl -s http://127.0.0.1:8300/api/status`

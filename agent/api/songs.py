@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from agent import config
 from agent.db import crud
 from agent.services import recipes as rc
 from agent.services.music import audio_file_variables
@@ -44,7 +45,8 @@ class SongPatch(BaseModel):
 
 
 class GenerateIn(BaseModel):
-    recipe: Optional[str] = None           # override the default recipe
+    # None → Flow Music's API directly (audio__create_song); a name → that recorded recipe
+    recipe: Optional[str] = None
     variables: dict[str, Any] = {}          # extra / override recipe variables
 
 
@@ -96,12 +98,14 @@ async def song_variables(song: dict) -> dict:
         "vocal": song.get("vocal") or "",
         "language": song.get("language") or (project or {}).get("language") or "en",
         "remote_id": song.get("remote_id"),
+        "flow_project_id": (project or {}).get("flow_music_project_id") or config.default_flow_project_id(),
     }
 
 
 async def queue(kind: str, recipe: str, song: Optional[dict], variables: dict,
                 project_id: Optional[str] = None) -> dict:
-    _require_recipe(recipe)
+    if not recipe.startswith("native:"):
+        _require_recipe(recipe)
     return await crud.insert("request", {
         "type": kind,
         "recipe": recipe,
@@ -162,7 +166,7 @@ async def generate_song(sid: str, body: GenerateIn = GenerateIn()):
     if not song.get("prompt") and not song.get("lyrics"):
         raise HTTPException(400, "song needs a prompt or lyrics first")
     variables = {**await song_variables(song), **body.variables}
-    req = await queue("GENERATE_SONG", body.recipe or "generate_song", song, variables)
+    req = await queue("GENERATE_SONG", body.recipe or "native:audio__create_song", song, variables)
     await crud.update("song", sid, {"status": "PROCESSING", "error_message": None})
     return req
 

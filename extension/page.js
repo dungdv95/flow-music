@@ -1,5 +1,5 @@
 /**
- * Runs in the page's MAIN world on flowmusic.google.
+ * Runs in the page's MAIN world on flowmusic.app.
  *
  * 1. reCAPTCHA: mints a token through the page's own grecaptcha when the
  *    agent asks (GET_CAPTCHA → CAPTCHA_RESULT events via content.js).

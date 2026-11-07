@@ -78,7 +78,12 @@ curl -s -X POST http://127.0.0.1:8300/api/recipes/from-capture -H 'content-type:
 }' | python3 -m json.tool
 ```
 
-- `sample_values` keys become variables. Standard names the agent fills from a
+- The Flow Music project id (`GET /api/settings` → `flow_music_project_id`) is
+  templated automatically as `{{flow_project_id}}` wherever it appears in the
+  body or URL, and filled from the local project (or the saved setting) at run
+  time. Don't put it in `sample_values`.
+- `sample_values` keys become variables. For REST-style calls a value may also
+  sit in the URL (e.g. `/api/jobs/<job_id>`) — that's found too. Standard names the agent fills from a
   song row: `prompt`, `lyrics`, `title`, `instrumental`, `bpm`, `duration_s`,
   `vocal`, `language`, `remote_id`, `job_id`, `continue_at`. Values must occur
   **exactly once** in the body.

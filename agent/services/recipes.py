@@ -1,7 +1,7 @@
 """Recipes — captured Flow Music requests turned into reusable templates.
 
 Flow Music has no public API, and its private calls can only be signed by a
-signed-in flowmusic.google tab. Guessing payload shapes does not work, so every
+signed-in flowmusic.app tab. Guessing payload shapes does not work, so every
 operation starts as one real UI action recorded in capture mode. A recipe is
 that recorded request with the user-specific values (prompt, lyrics, bpm…)
 swapped for placeholders, plus rules for pulling ids and audio URLs out of the
@@ -533,13 +533,19 @@ def recipe_from_capture(
     extract_rules: Optional[dict] = None,
     poll: Optional[str] = None,
     rpc_index: int = 0,
+    auto_values: Optional[dict[str, str]] = None,
 ) -> tuple[Recipe, list[str]]:
     """Template a captured request.
 
     ``sample_values`` maps variable name → the literal value you typed into the
     UI during the capture, e.g. ``{"prompt": "dreamy lofi", "bpm": 84}``. Each
     literal must occur in the request body exactly once (strings are matched in
-    their escaped form). Returns the recipe and human-readable notes to review.
+    their escaped form). For fetch captures a value may sit in the URL instead
+    (e.g. ``/api/jobs/<job_id>``).
+
+    ``auto_values`` are known constants such as the Flow Music project id:
+    every occurrence (body and URL) becomes ``{{name}}``, and a missing one is
+    not an error. Returns the recipe and human-readable notes to review.
     """
     notes: list[str] = []
     url = capture["url"]
@@ -557,6 +563,10 @@ def recipe_from_capture(
     else:
         template = body
         kind = _body_kind(capture.get("request_content_type", ""), body)
+        parsed_url = urlparse(url)
+        rel = parsed_url.path + (f"?{parsed_url.query}" if parsed_url.query else "")
+        page_host = urlparse(capture.get("page_url") or "").netloc
+        target = rel if (not page_host or parsed_url.netloc == page_host) else url
 
     if "{{" in template:
         notes.append("captured body already contains '{{' — check placeholders by hand")
@@ -591,9 +601,33 @@ def recipe_from_capture(
                 break
             if count > 1:
                 raise RecipeError(f"'{var}': sample occurs {count} times in the body — must be exactly once")
+        if not placed and not is_batch:
+            url_form = quote(sample, safe="")
+            if target.count(url_form) == 1:
+                target = target.replace(url_form, f"{{{{{var}|url}}}}")
+                placed = True
         if not placed:
             raise RecipeError(f"'{var}': sample value not found in the captured body")
         variables[var] = {"required": var in ("prompt", "job_id", "remote_id")}
+
+    for var, value in (auto_values or {}).items():
+        if not value or var in (sample_values or {}):
+            continue
+        hits = 0
+        for form in _escaped_forms(str(value), kind):
+            if form in template:
+                hits += template.count(form)
+                filt = "url" if kind == "form" else ("json" if kind in ("json", "batch") else "raw")
+                ph = f"{{{{{var}}}}}" if filt == "json" else f"{{{{{var}|{filt}}}}}"
+                template = template.replace(form, ph)
+                break
+        if not is_batch:
+            url_form = quote(str(value), safe="")
+            hits += target.count(url_form)
+            target = target.replace(url_form, f"{{{{{var}|url}}}}")
+        if hits:
+            variables[var] = {"required": True}
+            notes.append(f"{var}: {hits} occurrence(s) templated as {{{{{var}}}}}")
 
     tokens = CAPTCHA_TOKEN_RE.findall(template)
     if tokens:
@@ -618,10 +652,6 @@ def recipe_from_capture(
         recipe = Recipe(name=name, transport="batchexecute",
                         rpc={"path": parsed["path"], "rpcid": parsed["rpcid"], "payload": template})
     else:
-        parsed_url = urlparse(url)
-        rel = parsed_url.path + (f"?{parsed_url.query}" if parsed_url.query else "")
-        page_host = urlparse(capture.get("page_url") or "").netloc
-        target = rel if (not page_host or parsed_url.netloc == page_host) else url
         headers = {}
         if capture.get("request_content_type"):
             headers["content-type"] = capture["request_content_type"]

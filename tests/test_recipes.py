@@ -185,3 +185,30 @@ def test_example_recipes_are_valid():
         r = rc.Recipe.from_dict(json.loads(path.read_text()))
         values = {"prompt": "p", "job_id": "j"}
         r.build_command(values)
+
+
+def test_auto_values_template_project_id_in_body_and_url():
+    pid = "a7a39602-5fb6-438e-9431-16d263ba48b7"
+    cap = {
+        "id": "c3", "method": "POST", "page_url": "https://flowmusic.app/project/x",
+        "url": f"https://flowmusic.app/api/projects/{pid}/songs",
+        "request_content_type": "application/json",
+        "request_body": json.dumps({"project": pid, "parent": pid, "prompt": "zzsample piano"}),
+    }
+    recipe, notes = rc.recipe_from_capture(cap, "generate_song", {"prompt": "zzsample piano"},
+                                           auto_values={"flow_project_id": pid})
+    assert pid not in recipe.request["url"] and pid not in recipe.request["body"]
+    assert not any("UUIDs" in n for n in notes)
+    cmd = recipe.build_command({"prompt": "x", "flow_project_id": "p-2"})
+    assert cmd["params"]["url"] == "/api/projects/p-2/songs"
+    assert json.loads(cmd["params"]["body"]) == {"project": "p-2", "parent": "p-2", "prompt": "x"}
+    with pytest.raises(rc.RecipeError, match="flow_project_id"):
+        recipe.build_command({"prompt": "x"})
+
+
+def test_sample_value_found_in_fetch_url():
+    cap = {"id": "c4", "method": "GET", "page_url": "https://flowmusic.app/",
+           "url": "https://flowmusic.app/api/jobs/job-zz123/status", "request_body": None}
+    recipe, _ = rc.recipe_from_capture(cap, "poll_song", {"job_id": "job-zz123"})
+    assert recipe.request["url"] == "/api/jobs/{{job_id|url}}/status"
+    assert recipe.request["body"] is None
