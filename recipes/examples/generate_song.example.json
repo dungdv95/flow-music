@@ -1,0 +1,25 @@
+{
+  "name": "generate_song",
+  "description": "FORMAT EXAMPLE ONLY — rpcid, path and payload slots are invented. Record the real one with /fm-capture generate_song.",
+  "transport": "batchexecute",
+  "captcha_action": "EXAMPLE_ACTION",
+  "captcha_sitekey": null,
+  "rpc": {
+    "path": "/_/ExampleMusicUi/data/batchexecute",
+    "rpcid": "AbC12d",
+    "payload": "[[\"{{prompt}}\",\"{{lyrics}}\",{{instrumental|jsonval}},{{bpm|jsonval}},{{duration_s|jsonval}}],\"{{$uuid}}\",[\"__CAPTCHA__\"]]"
+  },
+  "variables": {
+    "prompt": {"required": true},
+    "lyrics": {"default": ""},
+    "instrumental": {"default": false},
+    "bpm": {"default": null, "type": "number"},
+    "duration_s": {"default": null, "type": "number"}
+  },
+  "extract": {
+    "job_id": {"path": [0, 0]},
+    "remote_id": {"regex": "\"track_id\":\"([^\"]+)\""}
+  },
+  "poll": "poll_song",
+  "notes": []
+}

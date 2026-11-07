@@ -1,0 +1,21 @@
+{
+  "name": "poll_song",
+  "description": "FORMAT EXAMPLE ONLY — a REST-style poll. audio_urls is extracted automatically; 'failed' stops polling early.",
+  "transport": "fetch",
+  "captcha_action": null,
+  "request": {
+    "method": "GET",
+    "url": "/api/example/jobs/{{job_id|url}}",
+    "headers": {},
+    "body": null
+  },
+  "variables": {
+    "job_id": {"required": true}
+  },
+  "extract": {
+    "failed": {"regex": "\"state\":\"(FAILED|ERROR)\""},
+    "lyrics": {"path": ["result", "lyrics"]}
+  },
+  "poll": null,
+  "notes": []
+}

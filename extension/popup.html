@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --bg: #0f1117; --panel: #181b24; --text: #e7e9ee; --muted: #8a90a0; --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444; --accent: #8b5cf6; }
+  body { margin: 0; width: 340px; font: 13px/1.4 -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 12px 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #252a36; }
+  h1 { font-size: 14px; margin: 0; flex: 1; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); } .dot.run { background: var(--warn); }
+  section { padding: 10px 14px; border-bottom: 1px solid #252a36; }
+  .row { display: flex; justify-content: space-between; margin: 3px 0; }
+  .muted { color: var(--muted); }
+  button { background: var(--panel); color: var(--text); border: 1px solid #2c3242; border-radius: 6px; padding: 6px 10px; cursor: pointer; font: inherit; }
+  button:hover { border-color: var(--accent); }
+  .capture { display: flex; align-items: center; justify-content: space-between; }
+  .capture.on { background: rgba(239,68,68,.12); }
+  .rec { color: var(--bad); font-weight: 600; }
+  ul { list-style: none; padding: 0; margin: 0; max-height: 180px; overflow: auto; }
+  li { padding: 4px 0; border-bottom: 1px dashed #252a36; font-size: 12px; word-break: break-all; }
+  .actions { display: flex; gap: 6px; }
+</style>
+</head>
+<body>
+  <header><span id="dot" class="dot"></span><h1>Flow Music Kit</h1><span id="state" class="muted">off</span></header>
+  <section>
+    <div class="row"><span class="muted">Agent</span><span id="agent">—</span></div>
+    <div class="row"><span class="muted">Requests (ok / failed)</span><span id="counts">0 / 0</span></div>
+    <div class="row"><span class="muted">Last error</span><span id="err" class="muted">—</span></div>
+  </section>
+  <section id="capture-box" class="capture">
+    <div><div>Capture mode <span id="rec" class="rec"></span></div><div class="muted" id="cap-count">0 captured</div></div>
+    <button id="capture">Start</button>
+  </section>
+  <section class="actions">
+    <button id="open">Open Flow Music</button>
+    <button id="reconnect">Reconnect</button>
+  </section>
+  <section><div class="muted" style="margin-bottom:4px">Recent</div><ul id="log"></ul></section>
+  <script src="popup.js"></script>
+</body>
+</html>

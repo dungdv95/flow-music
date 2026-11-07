@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Flow Music Kit",
+  "version": "0.1.0",
+  "description": "Local agent bridge for Google Flow Music — runs requests inside a signed-in flowmusic.google tab and records UI requests as recipes.",
+  "permissions": ["storage", "alarms", "tabs", "scripting"],
+  "host_permissions": [
+    "https://flowmusic.google/*",
+    "https://*.flowmusic.google/*",
+    "https://*.googleusercontent.com/*",
+    "https://*.googleapis.com/*",
+    "http://127.0.0.1:8300/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://flowmusic.google/*", "https://*.flowmusic.google/*"],
+      "js": ["page.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://flowmusic.google/*", "https://*.flowmusic.google/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Flow Music Kit" }
+}

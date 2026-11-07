@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+.env
+*.db
+*.db-shm
+*.db-wal
+output/
+# Recorded recipes are tied to your account/UI version; examples are tracked.
+recipes/*.json
+!recipes/examples/
